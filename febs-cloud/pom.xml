@@ -19,6 +19,7 @@
         <module>../febs-gateway</module>
         <module>../febs-apm</module>
         <module>../febs-tx-manager</module>
+        <module>../febs-agent</module>
     </modules>
 
     <parent>
