@@ -18,12 +18,23 @@ management:
 febs:
   jwt:
     secret: fbdsajkhfkdsahfjkdsahfjkdshfkdsahfjkdshfkdsahfjkdshfkdsahfjkdshfkdsahfjkdshfkdsahfjkdsahfjkdshfkdsahfjkdshf
-    
-# OpenAI配置（实际使用时需要配置真实的API密钥）
+
+# LLM配置
+llm:
+  # 提供商类型：openai / local / mock
+  provider: mock
+
+# OpenAI配置
 openai:
-  api-key: your-api-key-here
-  model: gpt-3.5-turbo
-  base-url: https://api.openai.com/v1
+  api-key: ${OPENAI_API_KEY:your-api-key-here}
+  model: ${OPENAI_MODEL:gpt-3.5-turbo}
+  base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+
+# 本地LLM配置（Ollama等）
+local:
+  llm:
+    url: ${LOCAL_LLM_URL:http://localhost:11434}
+    model: ${LOCAL_LLM_MODEL:qwen2.5:7b}
 
 logging:
   level:

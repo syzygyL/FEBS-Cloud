@@ -1,0 +1,47 @@
+# FEBS-Agent 网关路由配置
+# 需要在Nacos配置中心添加此配置，或者在bootstrap.yml中配置
+#
+# 配置步骤：
+# 1. 登录Nacos控制台：http://${nacos.url}:8001/nacos
+# 2. 找到 febs-gateway.yaml 配置文件
+# 3. 在 spring.cloud.gateway.routes 下添加以下路由配置
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        # FEBS-Agent 智能客服服务路由
+        - id: febs-agent
+          uri: lb://FEBS-Agent
+          predicates:
+            - Path=/agent/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                key-resolver: "#{@ipKeyResolver}"
+        
+        # FEBS-Agent WebSocket路由（如果需要实时对话）
+        - id: febs-agent-ws
+          uri: lb:ws://FEBS-Agent
+          predicates:
+            - Path=/agent/ws/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                key-resolver: "#{@ipKeyResolver}"
+
+# OAuth2客户端配置（需要在认证服务器中添加）
+security:
+  oauth2:
+    client:
+      client-id: agent-client
+      client-secret: agent-secret
+      scope: agent
+      authorized-grant-types: password,authorization_code,refresh_token
+      auto-approve-scopes: agent
+      access-token-validity-seconds: 3600
+      refresh-token-validity-seconds: 86400

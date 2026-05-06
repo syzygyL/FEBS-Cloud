@@ -1,104 +1,124 @@
 # FEBS Cloud 智能客服Agent服务
 
-基于FEBS Cloud微服务架构的AI智能客服Agent服务，提供自然语言交互能力，用户可以通过对话方式管理系统。
+基于FEBS Cloud微服务架构的AI智能客服Agent服务，支持多种LLM后端，提供自然语言交互能力。
 
 ## 功能特性
 
-- **智能对话**：基于大语言模型的自然语言理解
-- **工具调用**：支持用户管理、权限管理、系统监控等工具调用
+- **多LLM支持**：OpenAI API / 本地Ollama / 模拟模式
+- **智能对话**：自然语言理解 + Function Calling
+- **工具调用**：用户管理、权限管理、任务调度、安全审计、代码生成、系统监控
 - **会话管理**：基于Redis的对话历史维护
 - **权限集成**：集成FEBS Cloud的OAuth2认证体系
-- **API文档**：集成Swagger/Knife4j自动生成API文档
+- **容器化部署**：支持Docker和Docker Compose部署
 
 ## 系统架构
 
 ```
-用户请求 → FEBS-Gateway → FEBS-Agent → LLM服务
+用户请求 → FEBS-Gateway → FEBS-Agent → LLM服务（OpenAI/Ollama）
                 ↓               ↓
             OAuth2认证      工具调用 → FEBS-Server-System
+                                    → FEBS-Server-Job
                                     → 其他微服务
 ```
 
-## 模块说明
+## 快速开始
 
-### 1. 工具系统（Tool System）
-- `AgentTool`：工具接口，所有工具必须实现此接口
-- `UserManagementTool`：用户管理工具
-- `PermissionManagementTool`：权限管理工具  
-- `SystemMonitorTool`：系统监控工具
-- `ToolRegistry`：工具注册器，管理所有可用工具
-
-### 2. LLM服务（LLM Service）
-- `LLMService`：大语言模型服务接口
-- `LLMServiceImpl`：模拟实现，实际项目中需替换为真实LLM API
-
-### 3. Agent服务（Agent Service）
-- `AgentService`：核心服务，协调LLM和工具调用
-- `ConversationService`：会话管理服务
-- `AgentController`：REST API接口
-
-## 部署配置
-
-### 1. 添加依赖
-
-在父模块pom.xml中添加febs-agent模块：
-
-```xml
-<modules>
-    ...
-    <module>../febs-agent</module>
-</modules>
-```
-
-### 2. 配置网关路由
-
-在Nacos配置中添加Agent服务路由：
-
-```yaml
-spring.cloud.gateway.routes:
-  - id: febs-agent
-    uri: lb://FEBS-Agent
-    predicates:
-      - Path=/agent/**
-    filters:
-      - StripPrefix=0
-```
-
-### 3. 配置认证
-
-在认证服务器中添加Agent服务的客户端配置：
-
-```yaml
-security:
-  oauth2:
-    client:
-      client-id: agent-client
-      client-secret: agent-secret
-      scope: agent
-      authorized-grant-types: password,authorization_code,refresh_token
-      auto-approve-scopes: agent
-```
-
-### 4. 环境变量
+### 1. 本地开发
 
 ```bash
-# OpenAI API配置
-OPENAI_API_KEY=your-api-key-here
-OPENAI_MODEL=gpt-3.5-turbo
+# 进入项目目录
+cd febs-agent
 
-# Redis配置
-REDIS_HOST=localhost
-REDIS_PORT=6379
+# 打包
+mvn clean package -DskipTests
 
-# 数据库配置
-DB_URL=jdbc:mysql://localhost:3306/febs_cloud
-DB_USERNAME=root
-DB_PASSWORD=123456
+# 启动服务（模拟LLM模式）
+java -jar target/febs-agent.jar --spring.profiles.active=dev
+
+# 或者使用启动脚本
+chmod +x start.sh
+./start.sh
+```
+
+### 2. 使用OpenAI API
+
+```bash
+# 设置环境变量
+export OPENAI_API_KEY=your-api-key
+export OPENAI_MODEL=gpt-3.5-turbo
+
+# 启动服务
+java -jar target/febs-agent.jar \
+  --spring.profiles.active=dev \
+  --llm.provider=openai
+```
+
+### 3. 使用本地Ollama
+
+```bash
+# 先启动Ollama服务
+docker run -d --name ollama -p 11434:11434 ollama/ollama:latest
+
+# 下载模型
+docker exec ollama ollama pull qwen2.5:7b
+
+# 启动Agent服务
+java -jar target/febs-agent.jar \
+  --spring.profiles.active=dev \
+  --llm.provider=local \
+  --local.llm.url=http://localhost:11434
+```
+
+### 4. Docker Compose部署
+
+```bash
+# 一键启动所有服务
+docker-compose up -d
+
+# 启动带本地LLM的服务
+docker-compose --profile local-llm up -d
+
+# 查看日志
+docker-compose logs -f febs-agent
+```
+
+## 配置说明
+
+### LLM配置
+
+```yaml
+llm:
+  provider: mock  # 可选：openai / local / mock
+
+openai:
+  api-key: ${OPENAI_API_KEY:your-api-key}
+  model: ${OPENAI_MODEL:gpt-3.5-turbo}
+  base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+
+local:
+  llm:
+    url: ${LOCAL_LLM_URL:http://localhost:11434}
+    model: ${LOCAL_LLM_MODEL:qwen2.5:7b}
+```
+
+### 网关路由配置
+
+在Nacos的 `febs-gateway.yaml` 中添加：
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: febs-agent
+          uri: lb://FEBS-Agent
+          predicates:
+            - Path=/agent/**
 ```
 
 ## API接口
 
-### 1. 发送消息给Agent
+### 发送消息
 
 ```http
 POST /agent/chat
@@ -107,122 +127,90 @@ Authorization: Bearer {access_token}
 
 {
     "userId": "mrbird",
-    "message": "查询所有用户列表",
+    "message": "查询所有用户",
     "sessionId": "optional-session-id"
 }
 ```
 
-### 2. 健康检查
+### 健康检查
 
 ```http
 GET /agent/health
 ```
 
-### 3. 清空会话
+### 获取工具列表
 
 ```http
-DELETE /agent/conversation/{sessionId}
-Authorization: Bearer {access_token}
+GET /agent/tools
 ```
 
-## 开发指南
+## 支持的自然语言指令
 
-### 1. 添加新工具
+| 场景 | 示例指令 |
+|------|---------|
+| 用户管理 | "查询所有用户"、"查看scott的详情" |
+| 权限管理 | "查看角色列表"、"查看管理员的权限" |
+| 定时任务 | "查看任务列表"、"暂停数据同步任务" |
+| 安全审计 | "这周有哪些异常登录"、"生成安全报告" |
+| 代码生成 | "列出数据库表"、"生成用户管理的CRUD代码" |
+| 系统监控 | "查看系统健康状态"、"查看服务列表" |
 
-实现`AgentTool`接口：
+## 目录结构
 
-```java
-@Component
-public class MyCustomTool implements AgentTool {
-    
-    @Override
-    public String getName() {
-        return "my_custom_tool";
-    }
-    
-    @Override
-    public String getDescription() {
-        return "我的自定义工具描述";
-    }
-    
-    @Override
-    public String getParameters() {
-        return "{\"type\": \"object\", \"properties\": {}}";
-    }
-    
-    @Override
-    public String execute(String arguments) {
-        // 工具执行逻辑
-        return "执行结果";
-    }
-}
 ```
-
-### 2. 替换LLM服务
-
-修改`LLMServiceImpl`，集成真实的LLM API：
-
-```java
-@Service
-public class LLMServiceImpl implements LLMService {
-    
-    @Value("${openai.api-key}")
-    private String apiKey;
-    
-    @Value("${openai.base-url}")
-    private String baseUrl;
-    
-    @Override
-    public ChatResponse chatWithTools(ChatRequest request, List<Map<String, Object>> toolDefinitions) {
-        // 调用OpenAI API或其他LLM服务
-        // 实现Function Calling逻辑
-        return callOpenAIWithTools(request, toolDefinitions);
-    }
-    
-    private ChatResponse callOpenAIWithTools(ChatRequest request, List<Map<String, Object>> toolDefinitions) {
-        // 实现具体的API调用逻辑
-        return new ChatResponse();
-    }
-}
+febs-agent/
+├── pom.xml
+├── Dockerfile
+├── docker-compose.yml
+├── start.sh
+├── README.md
+└── src/main/
+    ├── java/cc/mrbird/febs/agent/
+    │   ├── FebsAgentApplication.java
+    │   ├── configure/
+    │   │   ├── GsonConfigure.java
+    │   │   ├── LLMConfigure.java
+    │   │   ├── RedisConfigure.java
+    │   │   ├── ResourceServerConfigure.java
+    │   │   └── SwaggerConfigure.java
+    │   ├── controller/
+    │   │   └── AgentController.java
+    │   ├── dto/
+    │   │   ├── ChatRequest.java
+    │   │   └── ChatResponse.java
+    │   ├── entity/
+    │   │   └── Conversation.java
+    │   ├── feign/
+    │   │   ├── UserServiceClient.java
+    │   │   └── RoleServiceClient.java
+    │   ├── service/
+    │   │   ├── AgentService.java
+    │   │   ├── ConversationService.java
+    │   │   ├── LLMService.java
+    │   │   ├── MockLLMServiceImpl.java
+    │   │   ├── OpenAILLMServiceImpl.java
+    │   │   └── LocalLLMServiceImpl.java
+    │   └── tool/
+    │       ├── AgentTool.java
+    │       ├── ToolRegistry.java
+    │       ├── UserManagementTool.java
+    │       ├── PermissionManagementTool.java
+    │       ├── SecurityAuditTool.java
+    │       ├── JobManagementTool.java
+    │       ├── CodeGeneratorTool.java
+    │       └── SystemMonitorTool.java
+    └── resources/
+        ├── bootstrap.yml
+        ├── application.yml
+        ├── application-dev.yml
+        └── gateway-route-config.yml
 ```
-
-### 3. 配置Feign客户端
-
-配置Feign客户端调用其他微服务API：
-
-```java
-@FeignClient(name = "FEBS-Server-System", path = "/user")
-public interface UserServiceClient {
-    @GetMapping("/users")
-    Map<String, Object> getUserList(@RequestParam Map<String, Object> params);
-}
-```
-
-## 监控与运维
-
-### 1. 服务监控
-
-Agent服务集成了Spring Boot Actuator，可以通过以下端点查看服务状态：
-
-- `/agent/actuator/health`：健康状态
-- `/agent/actuator/metrics`：性能指标
-- `/agent/actuator/info`：服务信息
-
-### 2. 日志配置
-
-日志文件位于`logs/febs-agent.log`，日志级别为DEBUG。
-
-## 注意事项
-
-1. **安全性**：确保Agent API接口受OAuth2保护
-2. **性能**：LLM API调用可能有延迟，建议使用异步处理
-3. **成本**：使用商业LLM API会产生费用，建议配置预算监控
-4. **扩展性**：工具系统支持动态注册，可以根据需要添加新工具
 
 ## 后续规划
 
-1. **多模型支持**：支持OpenAI、Anthropic、本地LLM等多种模型
-2. **插件系统**：支持插件化工具扩展
-3. **对话优化**：增加对话历史压缩和上下文管理
-4. **安全增强**：添加敏感信息过滤和操作确认机制
-5. **性能优化**：增加缓存、批量处理等优化
+- [ ] 接入更多LLM：Claude、Gemini、文心一言
+- [ ] 流式对话：SSE/WebSocket实时响应
+- [ ] 多轮对话优化：上下文压缩、记忆管理
+- [ ] 工具扩展：更多业务工具、自定义工具
+- [ ] 前端界面：对话式管理后台
+- [ ] 性能优化：缓存、批量处理、异步调用
