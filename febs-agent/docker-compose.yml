@@ -1,0 +1,80 @@
+# FEBS Agent Docker Compose 配置
+# 使用方式：docker-compose up -d
+
+version: '3.8'
+
+services:
+  febs-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: febs-agent:latest
+    container_name: febs-agent
+    ports:
+      - "8601:8601"
+    environment:
+      - TZ=Asia/Shanghai
+      - SPRING_PROFILES_ACTIVE=prod
+      - JAVA_MEM_OPTS=-Xms256m -Xmx512m
+      # LLM配置
+      - LLM_PROVIDER=openai
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      # 本地LLM配置
+      - LOCAL_LLM_URL=${LOCAL_LLM_URL:-http://ollama:11434}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-qwen2.5:7b}
+      # Nacos配置
+      - NACOS_URL=${NACOS_URL:-nacos}
+    volumes:
+      - ./logs:/febs/logs
+    networks:
+      - febs-network
+    depends_on:
+      - nacos
+      - redis
+    restart: unless-stopped
+
+  # Ollama本地LLM服务（可选）
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - febs-network
+    restart: unless-stopped
+    profiles:
+      - local-llm
+
+  # Nacos注册中心
+  nacos:
+    image: nacos/nacos-server:latest
+    container_name: nacos
+    ports:
+      - "8001:8485"
+    environment:
+      - MODE=standalone
+      - SPRING_DATASOURCE_PLATFORM=derby
+    networks:
+      - febs-network
+    restart: unless-stopped
+
+  # Redis缓存
+  redis:
+    image: redis:6-alpine
+    container_name: febs-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - febs-network
+    restart: unless-stopped
+
+networks:
+  febs-network:
+    driver: bridge
+
+volumes:
+  ollama-data:
