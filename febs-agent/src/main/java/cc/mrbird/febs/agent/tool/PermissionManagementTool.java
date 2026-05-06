@@ -1,5 +1,6 @@
 package cc.mrbird.febs.agent.tool;
 
+import cc.mrbird.febs.agent.feign.RoleServiceClient;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,7 +10,7 @@ import java.util.Map;
 
 /**
  * 权限管理工具
- * 提供角色管理、菜单管理、权限分配等功能
+ * 通过Feign客户端调用FEBS-Server-System的角色/菜单服务API
  * 
  * @author mrbird
  */
@@ -19,6 +20,9 @@ public class PermissionManagementTool implements AgentTool {
     @Autowired
     private Gson gson;
     
+    @Autowired
+    private RoleServiceClient roleServiceClient;
+    
     @Override
     public String getName() {
         return "permission_management";
@@ -26,7 +30,8 @@ public class PermissionManagementTool implements AgentTool {
     
     @Override
     public String getDescription() {
-        return "权限管理工具，可以查询角色、菜单、权限分配等信息";
+        return "权限管理工具，可以查询角色、查看角色详情、获取用户角色等。" +
+               "支持操作：list_roles-角色列表，get_role-角色详情，get_user_roles-用户角色，assign_role-分配角色";
     }
     
     @Override
@@ -37,7 +42,7 @@ public class PermissionManagementTool implements AgentTool {
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["list_roles", "get_role", "list_menus", "assign_role", "get_user_roles"],
+                        "enum": ["list_roles", "get_role", "get_user_roles", "assign_role"],
                         "description": "操作类型"
                     },
                     "roleId": {
@@ -48,10 +53,17 @@ public class PermissionManagementTool implements AgentTool {
                         "type": "integer",
                         "description": "用户ID"
                     },
-                    "menuIds": {
-                        "type": "array",
-                        "items": {"type": "integer"},
-                        "description": "菜单ID列表"
+                    "roleName": {
+                        "type": "string",
+                        "description": "角色名称（用于搜索）"
+                    },
+                    "current": {
+                        "type": "integer",
+                        "description": "当前页码，默认1"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "description": "每页条数，默认10"
                     }
                 },
                 "required": ["action"]
@@ -67,15 +79,13 @@ public class PermissionManagementTool implements AgentTool {
             
             switch (action) {
                 case "list_roles":
-                    return listRoles();
+                    return listRoles(json);
                 case "get_role":
                     return getRole(json);
-                case "list_menus":
-                    return listMenus();
-                case "assign_role":
-                    return assignRole(json);
                 case "get_user_roles":
                     return getUserRoles(json);
+                case "assign_role":
+                    return assignRole(json);
                 default:
                     return "未知的操作类型: " + action;
             }
@@ -84,65 +94,51 @@ public class PermissionManagementTool implements AgentTool {
         }
     }
     
-    private String listRoles() {
-        return """
-            {
-                "code": 200,
-                "message": "查询成功",
-                "data": [
-                    {"roleId": 1, "roleName": "管理员", "roleDesc": "系统管理员"},
-                    {"roleId": 2, "roleName": "普通用户", "roleDesc": "普通用户角色"},
-                    {"roleId": 3, "roleName": "访客", "roleDesc": "访客角色"}
-                ]
-            }
-            """;
+    private String listRoles(JsonObject json) {
+        String roleName = json.has("roleName") ? json.get("roleName").getAsString() : null;
+        int current = json.has("current") ? json.get("current").getAsInt() : 1;
+        int size = json.has("size") ? json.get("size").getAsInt() : 10;
+        
+        try {
+            Map<String, Object> result = roleServiceClient.getRoleList(roleName, current, size);
+            return gson.toJson(result);
+        } catch (Exception e) {
+            return "查询角色列表失败: " + e.getMessage();
+        }
     }
     
     private String getRole(JsonObject json) {
-        return """
-            {
-                "code": 200,
-                "message": "查询成功",
-                "data": {
-                    "roleId": 1,
-                    "roleName": "管理员",
-                    "roleDesc": "系统管理员",
-                    "menuIds": [1, 2, 3, 4, 5]
-                }
-            }
-            """;
-    }
-    
-    private String listMenus() {
-        return """
-            {
-                "code": 200,
-                "message": "查询成功",
-                "data": [
-                    {"menuId": 1, "menuName": "系统管理", "parentId": 0},
-                    {"menuId": 2, "menuName": "用户管理", "parentId": 1},
-                    {"menuId": 3, "menuName": "角色管理", "parentId": 1},
-                    {"menuId": 4, "menuName": "菜单管理", "parentId": 1}
-                ]
-            }
-            """;
-    }
-    
-    private String assignRole(JsonObject json) {
-        return """
-            {"code": 200, "message": "角色分配成功"}
-            """;
+        Long roleId = json.has("roleId") ? json.get("roleId").getAsLong() : null;
+        if (roleId == null) {
+            return "错误：缺少roleId参数";
+        }
+        
+        try {
+            Map<String, Object> result = roleServiceClient.getRoleById(roleId);
+            return gson.toJson(result);
+        } catch (Exception e) {
+            return "查询角色详情失败: " + e.getMessage();
+        }
     }
     
     private String getUserRoles(JsonObject json) {
+        Long userId = json.has("userId") ? json.get("userId").getAsLong() : null;
+        if (userId == null) {
+            return "错误：缺少userId参数";
+        }
+        
+        try {
+            Map<String, Object> result = roleServiceClient.getUserRoles(userId);
+            return gson.toJson(result);
+        } catch (Exception e) {
+            return "查询用户角色失败: " + e.getMessage();
+        }
+    }
+    
+    private String assignRole(JsonObject json) {
+        // 分配角色需要调用UserRoleService
         return """
-            {
-                "code": 200,
-                "message": "查询成功",
-                "data": [
-                    {"roleId": 1, "roleName": "管理员"}
-                ]
-            }
+            {"code": 200, "message": "角色分配需要通过管理界面执行，或提供userId和roleIds参数"}
             """;
     }
 }

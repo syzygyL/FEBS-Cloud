@@ -5,13 +5,14 @@ import cc.mrbird.febs.agent.dto.ChatResponse;
 import cc.mrbird.febs.agent.entity.Conversation;
 import cc.mrbird.febs.agent.service.AgentService;
 import cc.mrbird.febs.agent.service.ConversationService;
+import cc.mrbird.febs.agent.tool.ToolRegistry;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -30,6 +31,9 @@ public class AgentController {
     
     @Autowired
     private ConversationService conversationService;
+    
+    @Autowired
+    private ToolRegistry toolRegistry;
     
     @PostMapping("/chat")
     @ApiOperation("发送消息给Agent")
@@ -66,21 +70,38 @@ public class AgentController {
     
     @GetMapping("/health")
     @ApiOperation("健康检查")
-    public String health() {
-        return "Agent service is running";
+    public Map<String, Object> health() {
+        return Map.of(
+            "status", "UP",
+            "service", "FEBS-Agent",
+            "timestamp", System.currentTimeMillis(),
+            "tools", toolRegistry.getAllTools().size()
+        );
+    }
+    
+    @GetMapping("/tools")
+    @ApiOperation("获取可用工具列表")
+    public List<Map<String, Object>> getTools() {
+        return toolRegistry.getToolDefinitions();
     }
     
     @GetMapping("/conversations")
     @ApiOperation("获取会话列表")
     public List<Conversation> getConversations(@RequestParam String userId) {
-        // 这里应该实现会话列表查询逻辑
+        // 实际应从Redis查询该用户的所有会话
         return List.of();
+    }
+    
+    @GetMapping("/conversation/{sessionId}")
+    @ApiOperation("获取会话详情")
+    public Conversation getConversation(@PathVariable String sessionId) {
+        return conversationService.getConversation(sessionId);
     }
     
     @DeleteMapping("/conversation/{sessionId}")
     @ApiOperation("清空会话")
-    public String clearConversation(@PathVariable String sessionId) {
+    public Map<String, Object> clearConversation(@PathVariable String sessionId) {
         conversationService.clearConversation(sessionId);
-        return "会话已清空";
+        return Map.of("code", 200, "message", "会话已清空");
     }
 }
